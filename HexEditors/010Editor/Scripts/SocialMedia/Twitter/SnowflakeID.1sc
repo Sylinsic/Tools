@@ -1,0 +1,27 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Script File
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+//   History: 
+//------------------------------------------------
+
+string readTimestamp(local uint64 &ts) {
+    local time64_t ft = (time64_t)(ts / 1000);
+    local char ts_s [64] = Str("%Ld", ts);
+    local char ms [64] = SubStr(ts_s, Strlen(ts_s)-3, 3);
+    return Time64TToString(ft, "dd/MM/yyyy hh:mm:ss.") + ms;
+}
+
+local int selSize = GetSelSize();
+local int selStart = GetSelStart();
+
+local char numString [selSize] = ReadString(selStart, selSize);
+local uint64 number;
+SScanf(numString, "%Lu", number);
+
+local uint64 ts = (number >> 22) + 1288834974657;
+Printf("SnowflakeID %s has timestamp: %Lu : %s UTC\n", numString, ts, readTimestamp(ts));

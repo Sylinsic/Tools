@@ -1,0 +1,25 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Script File
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+//   History: 
+//------------------------------------------------
+string readTimestamp(local uint64 &ts) {
+    local FILETIME ft = (FILETIME)(ts * 10);
+    local char ts_s [64] = Str("%Ld", ts);
+    local char ms [64] = SubStr(ts_s, Strlen(ts_s)-6, 6 );
+    return FileTimeToString(ft, "dd/MM/yyyy hh:mm:ss.") + ms;
+}
+
+local int selSize = GetSelSize();
+local int selStart = GetSelStart();
+
+local char numString [selSize] = ReadString(selStart, selSize);
+local uint64 ts;
+SScanf(numString, "%Lu", ts);
+
+Printf("Timestamp %s represents %s\n", numString, readTimestamp(ts));

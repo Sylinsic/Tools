@@ -1,0 +1,192 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+LittleEndian();
+
+typedef struct {
+    int16 OwnerDefaulted : 1;
+    int16 GroupDefaulted : 1;
+    int16 DaclPresent : 1;
+    int16 DaclDefaulted : 1;
+    int16 SaclPresent : 1;
+    int16 SaclDefaulted : 1;
+    int16 Reserved : 2;
+    int16 DaclAutoInheritReq : 1;
+    int16 SaclAutoInheritReq : 1;
+    int16 DaclAutoInherited : 1;
+    int16 SaclAutoInherited : 1;
+    int16 DaclProtected : 1;
+    int16 SaclProtected : 1;
+    int16 RMControlValid : 1;
+    int16 SelfRelative : 1;
+} CONTROL_FLAGS;
+
+typedef struct {
+    byte ObjectInherit : 1;
+    byte ContainerInherit : 1;
+    byte NoPropagateInherit : 1;
+    byte InheritOnly : 1;
+    byte Inherited : 1;
+    byte Reserved : 1;
+    byte SuccessfulAccess : 1;
+    byte FailedAccess : 1;
+} ACCESS_FLAGS;
+
+typedef struct {
+    byte Unknown : 6;
+    byte OnSuccess : 1;
+    byte OnFailure : 1;
+} SYSTEM_AUDIT_FLAGS;
+
+typedef enum <byte> {
+    AccessAllowed = 0x00,
+    AccessDenied = 0x01,
+    SystemAudit = 0x02
+} TYPE;
+
+typedef struct {
+    int16 ObjectSpecificAccessRights;
+    byte Delete : 1;
+    byte ReadControl : 1;
+    byte WriteDAC : 1;
+    byte WriteOwner : 1;
+    byte Synchronise : 1;
+    byte Reserved : 3;
+    byte AccessSystemSecurity : 1;
+    byte MaximumAllowed : 1;
+    byte Reserved : 2;
+    byte GenericALL : 1;
+    byte GenericExecute : 1;
+    byte GenericWrite : 1;
+    byte GenericRead : 1;
+} ACCESS_MASK;
+
+typedef struct {
+    BYTE Revision;
+    BYTE SubAuthorityCount;
+    BigEndian();
+    BitfieldDisablePadding();
+    int64 Authority : 48;
+    LittleEndian();
+    local int32 i;
+
+    for (i = 0; i < SubAuthorityCount; i++) {
+        int32 SubAuthorities;
+    }
+    BitfieldEnablePadding();
+} SID <read=readSID>;
+
+string readSID (local SID &sid) {
+    string Out = "S";
+    Out += Str("-%d", sid.Revision);
+    Out += Str("-%ld", sid.Authority);
+    local int32 i;
+    for (i = 0; i < sid.SubAuthorityCount; i++) {
+        Out += Str("-%d", sid.SubAuthorities[i]);
+    }
+    return Out;
+}
+
+typedef struct {
+    TYPE Type;
+
+    if (Type == SystemAudit) {
+        SYSTEM_AUDIT_FLAGS Flags;
+    }
+    else {
+        ACCESS_FLAGS Flags;
+    }
+
+    int16 Size;
+    ACCESS_MASK AccessMask;
+    SID SecurityIdentifier;
+    local int32 paddingSize = Size - (sizeof(SecurityIdentifier) + 8);
+    if (paddingSize > 0) {
+        BYTE Padding [paddingSize];
+    }
+} ACE <read=Str("%s    -    %s", EnumToString(this.Type), readSID(SecurityIdentifier))>;
+
+typedef struct {
+    BYTE AclRevision;
+    BYTE Padding;
+    int16 AclSize;
+    int16 AceCount;
+    int16 Padding2;
+    ACE ACEs[AceCount] <optimize=false>;
+
+    local int32 paddingSize = AclSize - (sizeof(ACEs) + 8);
+    if (paddingSize > 0) {
+        BYTE Padding3 [paddingSize];
+    }
+} ACL;
+
+typedef struct {
+    BYTE Revision;
+    BYTE Padding;
+    CONTROL_FLAGS ControlFlags;
+    int32 UserSIDOffset;
+    int32 GroupSIDOffset;
+    int32 SaclOffset;
+    int32 DaclOffset;
+} HEADER;
+
+typedef struct {
+    local int64 base = FTell();
+
+    HEADER Header;
+    if (Header.ControlFlags.SaclPresent) {
+        FSeek(base + Header.SaclOffset);
+        ACL Sacl;
+    }
+    if (Header.ControlFlags.DaclPresent) {
+        FSeek(base + Header.DaclOffset);
+        ACL Dacl;
+    }
+    FSeek(base + Header.UserSIDOffset);
+    SID UserSID;
+    FSeek(base + Header.GroupSIDOffset);
+    SID GroupSID;
+} SECURITY_DESCRIPTOR <read=readSecurityDescriptor>;
+
+string readSecurityDescriptor(local SECURITY_DESCRIPTOR &sd) {
+    return Str("%s    |    %s", readSID(sd.UserSID), readSID(sd.GroupSID));
+};
+
+typedef struct {
+    local int32 paddingSize;
+
+    CHAR Hash [4];
+    int32 SecurityId;
+    int64 EntryOffset;
+    int32 EntrySize;
+    
+    SECURITY_DESCRIPTOR SecurityDescriptor;
+    paddingSize = 16 - (EntrySize % 16);
+ 
+
+    if (paddingSize > 0 && paddingSize < 16 && !FEof()) {
+        BYTE Padding [paddingSize];
+    }
+} SDS <read=readSDS>;
+
+string readSDS(local SDS &s) {
+    return Str("%d    -     %s", s.SecurityId, readSecurityDescriptor(s.SecurityDescriptor));
+};
+
+while (!FEof()) {
+    if (!ReadQuad() && !ReadQuad(FTell() + 0x4) && !ReadQuad(FTell() + 0x8) && !ReadQuad(FTell() + 0xC)) {
+        FSeek(0x40000);
+    }
+
+    SDS Sds;
+}

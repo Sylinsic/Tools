@@ -1,0 +1,348 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+LittleEndian();
+
+QWORD lsn_to_offset(QWORD lsn, DWORD SeqNumberBits, DWORD LogPageSize) {
+    return (((lsn << SeqNumberBits) & 0xFFFFFFFFFFFFFFFF) >> (SeqNumberBits - 3) % LogPageSize);
+};
+
+
+enum RECORD_TYPE {
+    ClientRecord = 1,
+    ClientRestart = 2
+};
+
+typedef struct {
+    CHAR Signature [4];
+    USHORT UpdateSequenceArrayOffset;
+    USHORT UpdateSequenceArraySize;
+} _MULTI_SECTOR_HEADER;
+
+typedef struct {
+    QWORD OldestLsn;
+    QWORD ClientRestartLsn;
+    WORD PrevClient;
+    WORD NextClient;
+    WORD SeqNumber;
+    CHAR Padding [6];
+    DWORD ClientNameLength;
+    wchar_t ClientName[64];
+} _LFS_CLIENT_RECORD;
+
+typedef enum <WORD> {
+    RESTART_SINGLE_PAGE_IO = 0x1,
+    RESTART_WRITTEN_TO_LOGFILE = 0x2
+} _LFS_RESTART_AREA_FLAGS <read=read_LFS_RESTART_AREA_FLAGS>;
+
+string read_LFS_RESTART_AREA_FLAGS (local _LFS_RESTART_AREA_FLAGS &r) {
+    local string s = "";
+    local string tmp = "";
+    local int pipeNeeded = 0;
+    local _LFS_RESTART_AREA_FLAGS i = 1;
+
+    while (i < RESTART_WRITTEN_TO_LOGFILE) {
+        if (r & i) {
+            if (pipeNeeded) {
+                s += " | ";
+            }
+
+            SPrintf(tmp,"0x%x",i);
+
+            s += EnumToString(i) + " (" + tmp + ")";
+            pipeNeeded = 1;
+        }
+        i = i << 1;
+    }
+
+    if (r & RESTART_WRITTEN_TO_LOGFILE) {
+        if (pipeNeeded) {
+            s += " | ";
+        }
+   
+        SPrintf(tmp, "0x%x", i);
+        
+        s += EnumToString(i) + " (" + tmp + ")";
+    }
+
+    if (s == "") {
+        return "0x0";
+    }
+
+    SPrintf(tmp,"0x%x",r);
+    s += " - (" + tmp + ")";
+
+    return s;
+}
+
+typedef struct {
+    local QWORD base = FTell();
+    QWORD CurrentLsn;
+    WORD LogClients;
+    WORD ClientFreeList;
+    WORD ClientInUseList;
+    _LFS_RESTART_AREA_FLAGS Flags;
+    DWORD SeqNumberBits;
+    WORD RestartAreaLength;
+    WORD ClientArrayOffset;
+    QWORD FileSize;
+    DWORD LastLsnDataLength;
+    WORD RecordHeaderLength;
+    WORD LogPageDataOffset;
+    DWORD RevisionNumber;
+
+
+    FSeek(base + ClientArrayOffset);
+    _LFS_CLIENT_RECORD LogClientArray [LogClients];
+} _LFS_RESTART_AREA;
+
+typedef struct {
+    local QWORD base = FTell();
+
+    _MULTI_SECTOR_HEADER MULTI_SECTOR_HEADER;
+    QWORD ChkDskLsn;
+    DWORD SystemPageSize;
+    DWORD LogPageSize;
+    WORD RestartOffset;
+    WORD MinorVersion;
+    WORD MajorVersion;
+    CHAR UpdateSequenceArray [RestartOffset - 0x1E];
+
+    FSeek(base + RestartOffset);
+    _LFS_RESTART_AREA LFS_RESTART_AREA;
+} _LFS_RESTART_PAGE <size=4096>;
+
+typedef struct {
+    DWORD MajorVersion;
+    DWORD MinorVersion;
+    QWORD StartOfCheckpointLsn;
+    QWORD OpenAttributeTableLsn;
+    QWORD AttributeNamesLsn;
+    QWORD DirtyPageTableLsn;
+    QWORD TransactionTableLsn;
+    DWORD OpenAttributeTableLength;
+    DWORD AttributeNamesLength;
+    DWORD DirtyPageTableLength;
+    DWORD TransactionTableLength;
+    QWORD Unknown1;
+    QWORD PreviousRestartRecordLsn;
+    DWORD BytesPerCluster;
+    DWORD Padding;
+    QWORD UsnJournalReference;
+    QWORD UsnJournalBase;
+    QWORD OldestLsn;
+} _LFS_NTFS_RESTART_AREA;
+
+enum _NTFS_LOG_OPERATION {
+    Noop = 0x0,
+    CompensationLogRecord = 0x1,
+	InitializeFileRecordSegment = 0x2,
+	DeallocateFileRecordSegment = 0x3,
+	WriteEndOfFileRecordSegment = 0x4,
+	CreateAttribute = 0x5,
+	DeleteAttribute = 0x6,
+	UpdateResidentValue = 0x7,
+	UpdateNonresidentValue = 0x8,
+	UpdateMappingPairs = 0x9,
+	DeleteDirtyClusters = 0xA,
+	SetNewAttributeSizes = 0xB,
+	AddIndexEntryRoot = 0xC,
+	DeleteIndexEntryRoot = 0xD,
+	AddIndexEntryAllocation = 0xE,
+	DeleteIndexEntryAllocation = 0xF,
+	WriteEndOfIndexBuffer = 0x10,
+	SetIndexEntryVcnRoot = 0x11,
+	SetIndexEntryVcnAllocation = 0x12,
+	UpdateFileNameRoot = 0x13,
+	UpdateFileNameAllocation = 0x14,
+	SetBitsInNonresidentBitMap = 0x15,
+	ClearBitsInNonresidentBitMap = 0x16,
+	HotFix = 0x17,
+	EndTopLevelAction = 0x18,
+	PrepareTransaction = 0x19,
+	CommitTransaction = 0x1A,
+	ForgetTransaction = 0x1B,
+	OpenNonresidentAttribute = 0x1C,
+	OpenAttributeTableDump = 0x1D,
+	AttributeNamesDump = 0x1E,
+	DirtyPageTableDump = 0x1F,
+	TransactionTableDump = 0x20,
+	UpdateRecordDataRoot = 0x21,
+	UpdateRecordDataAllocation = 0x22,
+	UpdateRelativeDataIndex = 0x23,
+	UpdateRelativeDataAllocation = 0x24,
+	ZeroEndOfFileRecord = 0x25
+};
+
+typedef struct {
+    local QWORD base = FTell();
+    _NTFS_LOG_OPERATION RedoOperation;
+    _NTFS_LOG_OPERATION UndoOperation;
+    WORD RedoOffset;
+    WORD RedoLength;
+    WORD UndoOffset;
+    WORD UndoLength;
+    WORD TargetAttributeOffset;
+    WORD LCNsToFollow;
+    WORD RecordOffset;
+    WORD AttributeOffset;
+    WORD ClusterBlockOffset;
+    WORD TargetBlockSize;
+    QWORD TargetVCN;
+    QWORD LCNsForPage [LCNsToFollow];
+
+    FSeek(base + RedoOffset);
+    char RedoData [RedoLength];
+
+    FSeek(base + UndoOffset);
+    char UndoData [UndoLength];
+    
+} _LFS_NTFS_LOG_RECORD;
+
+typedef enum <WORD> {
+    LOG_RECORD_MULTI_PAGE = 0x1,
+    LOG_RECORD_NO_REDO_BUFFER = 0x2,
+    LOG_RECORD_NO_UNDO_BUFFER = 0x4
+} _LFS_RECORD_FLAGS <read=read_LFS_RECORD_FLAGS>;
+
+string read_LFS_RECORD_FLAGS(local _LFS_RECORD_FLAGS &r) {
+    local string s = "";
+    local string tmp = "";
+    local int pipeNeeded = 0;
+    local _LFS_RECORD_FLAGS i = 1;
+
+    while (i < LOG_RECORD_NO_UNDO_BUFFER) {
+        if (r & i) {
+            if (pipeNeeded) {
+                s += " | ";
+            }
+
+            SPrintf(tmp,"0x%x",i);
+
+            s += EnumToString(i) + " (" + tmp + ")";
+            pipeNeeded = 1;
+        }
+        i = i << 1;
+    }
+
+    if (r & LOG_RECORD_NO_UNDO_BUFFER) {
+        if (pipeNeeded) {
+            s += " | ";
+        }
+   
+        SPrintf(tmp, "0x%x", i);
+        
+        s += EnumToString(i) + " (" + tmp + ")";
+    }
+
+    if (s == "") {
+        return "0x0";
+    }
+
+    SPrintf(tmp,"0x%x",r);
+    s += " - (" + tmp + ")";
+
+    return s;
+}
+
+typedef struct {
+    QWORD ThisLsn;
+    QWORD ClientPreviousLsn;
+    QWORD ClientUndoNextLsn;
+    DWORD ClientDataLength;
+    WORD ClientSeqNumber;
+    WORD ClientIndex;
+    RECORD_TYPE RecordType;
+    DWORD TransactionId;
+    _LFS_RECORD_FLAGS Flags;
+    CHAR Padding [6];
+    if (RecordType == 1) {              // 1 = RECORD_TYPE.ClientRecord
+        _LFS_NTFS_LOG_RECORD Data;
+    }
+    if (RecordType == 2) {              // 2 = RECORD_TYPE.ClientRestart
+        _LFS_NTFS_RESTART_AREA Data;
+    }
+} _LFS_RECORD;
+
+typedef enum <DWORD> {
+    LOG_PAGE_LOG_RECORD_END = 0x1,
+    LOG_PAGE_CONTAINS_CLIENT_RESTART_AREA = 0x2
+} _LFS_RECORD_PAGE_FLAGS <read=read_LFS_RECORD_PAGE_FLAGS>;
+
+string read_LFS_RECORD_PAGE_FLAGS(local _LFS_RECORD_PAGE_FLAGS &r) {
+    local string s = "";
+    local string tmp = "";
+    local int pipeNeeded = 0;
+    local _LFS_RECORD_PAGE_FLAGS i = 1;
+
+    while (i < LOG_PAGE_CONTAINS_CLIENT_RESTART_AREA) {
+        if (r & i) {
+            if (pipeNeeded) {
+                s += " | ";
+            }
+
+            SPrintf(tmp,"0x%x",i);
+
+            s += EnumToString(i) + " (" + tmp + ")";
+            pipeNeeded = 1;
+        }
+        i = i << 1;
+    }
+
+    if (r & LOG_PAGE_CONTAINS_CLIENT_RESTART_AREA) {
+        if (pipeNeeded) {
+            s += " | ";
+        }
+   
+        SPrintf(tmp, "0x%x", i);
+        
+        s += EnumToString(i) + " (" + tmp + ")";
+    }
+
+    if (s == "") {
+        return "0x0";
+    }
+
+    SPrintf(tmp,"0x%x",r);
+    s += " - (" + tmp + ")";
+
+    return s;
+}
+
+typedef struct (WORD LogPageDataOffset, DWORD SeqNumberBits, DWORD LogPageSize){
+    _MULTI_SECTOR_HEADER MULTI_SECTOR_HEADER;
+    QWORD LastLsnOrFileOffset;
+    _LFS_RECORD_PAGE_FLAGS Flags;
+    WORD PageCount;
+    WORD PagePosition;
+    WORD NextRecordOffset;
+    CHAR Padding [6];
+    QWORD LastEndLsn;
+    //CHAR UpdateSequenceArray [LogPageDataOffset - 0x28];
+    CHAR UpdateSequenceArray [MULTI_SECTOR_HEADER.UpdateSequenceArraySize];
+
+    _LFS_RECORD Data;
+    while (Data.ThisLsn != LastEndLsn) {
+        _LFS_RECORD Data;
+    }
+
+} _LFS_RECORD_PAGE <size=4096>;
+
+_LFS_RESTART_PAGE p1;
+_LFS_RESTART_PAGE p2;
+
+
+while (!FEof())
+{
+    _LFS_RECORD_PAGE r(p2.LFS_RESTART_AREA.LogPageDataOffset, p2.LFS_RESTART_AREA.SeqNumberBits, p2.LogPageSize);
+}
